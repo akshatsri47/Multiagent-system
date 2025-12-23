@@ -9,5 +9,7 @@ dependencies = [
     "ipython>=9.7.0",
     "langchain>=1.1.0",
     "langchain-openai>=1.1.0",
+    "langchain-tavily>=0.2.15",
     "langgraph>=1.0.4",
+    "openai>=2.8.1",
 ]
