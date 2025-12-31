@@ -1,10 +1,13 @@
 from dotenv import load_dotenv
+from state import ResearcherReportmodel,ResearcherState
+from langgraph.types import Command
+from langchain_core.messages import ToolMessage
+from langchain_core.tools import InjectedToolCallId
 import operator
+from typing import Annotated,List
 from langgraph.prebuilt import ToolNode
-from typing import  List,Annotated
 from langgraph.graph import StateGraph,add_messages,END
 from langchain_core.messages import  SystemMessage
-from pydantic import BaseModel
 from langchain_openai import ChatOpenAI
 from langchain_tavily import TavilySearch,TavilyExtract
 from langchain.tools import tool
@@ -13,18 +16,20 @@ from langchain_core.messages import HumanMessage
 
 
 load_dotenv()
-SystemPrompt="You are the helpful research assitant use the leverage tools to research and get the details and present them in a strcutre and markdown manner dont answer yourself use the tools to answer the question"
+SystemPrompt="""You are a research agent.
 
-class ResearcherReport(BaseModel):
-    messages : str
-    report : str
-class ResearcherState(BaseModel):
-    messages:Annotated[list,add_messages] = []
-    research_reports : Annotated[list,operator.add] = []
-# tavily_search_tool =  TavilySearch(
-#     max_result  = 5
-#     topics = "general"
-# )
+Workflow:
+1. Use search_web to gather sources
+2. Use extract_web_page to read sources
+3. When enough information is collected, CALL the tool `generate_research_report`
+   with:
+   - topic: the research topic
+   - report: a well-structured markdown report
+
+DO NOT answer directly.
+ALWAYS finalize by calling generate_research_report.
+ """
+
 @tool
 def search_web(query:str,no_result : int = 3):
     """search the web and return the query"""
@@ -49,11 +54,36 @@ def extract_web_page(urls:List[str]):
     results = web_extract.invoke(input ={"urls":urls})["results"]
     return results
 llm = ChatOpenAI(model="gpt-4o-mini")
+@tool
+def generate_research_report(
+    topic: str,
+    report: str,
+    tool_call_id: Annotated[str, InjectedToolCallId],
+):
+    """Generate and store the final research report"""
 
+    research_report = ResearcherReportmodel(
+        topic=topic,
+        report=report
+    )
+
+    return Command(
+        update={
+            "research_reports": [research_report],
+            "messages": [
+                ToolMessage(
+                    name="generate_research_report",
+                    content=research_report.model_dump_json(),
+                    tool_call_id=tool_call_id,
+                )
+            ],
+        }
+    )
 
 tools = [
     search_web,
-    extract_web_page
+    extract_web_page,
+    generate_research_report
 ]
 llm_with_tools = llm.bind_tools(tools)
     
